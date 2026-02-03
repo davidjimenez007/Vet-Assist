@@ -1,10 +1,13 @@
 """Application configuration settings."""
 
+import logging
 from functools import lru_cache
 from typing import Optional
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -28,7 +31,11 @@ class Settings(BaseSettings):
     def fix_database_url_scheme(cls, v: str) -> str:
         """Transform Railway's postgres:// to postgresql+asyncpg:// for SQLAlchemy async."""
         if v and v.startswith("postgres://"):
-            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+            transformed = v.replace("postgres://", "postgresql+asyncpg://", 1)
+            # Log transformation (hide password)
+            safe_url = transformed.split("@")[-1] if "@" in transformed else "localhost"
+            logger.info(f"DATABASE_URL transformed: postgres:// -> postgresql+asyncpg:// (host: {safe_url})")
+            return transformed
         return v
 
     # Security
@@ -70,7 +77,14 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     """Get cached settings instance."""
-    return Settings()
+    s = Settings()
+    # Log database URL info (hide credentials)
+    if s.database_url:
+        host_part = s.database_url.split("@")[-1] if "@" in s.database_url else "localhost"
+        scheme = s.database_url.split("://")[0] if "://" in s.database_url else "unknown"
+        logger.info(f"Settings loaded - DB scheme: {scheme}, host: {host_part}")
+    return s
 
 
 settings = get_settings()
+
