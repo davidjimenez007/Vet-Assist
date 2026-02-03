@@ -3,6 +3,7 @@
 from functools import lru_cache
 from typing import Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -21,6 +22,14 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/vetassist"
     database_echo: bool = False
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def fix_database_url_scheme(cls, v: str) -> str:
+        """Transform Railway's postgres:// to postgresql+asyncpg:// for SQLAlchemy async."""
+        if v and v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+        return v
 
     # Security
     secret_key: str = "your-secret-key-change-in-production"
