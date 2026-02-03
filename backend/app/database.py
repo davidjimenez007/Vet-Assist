@@ -8,7 +8,21 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import text
 
+print("[DATABASE] Loading database module...")
 from app.config import settings
+
+# Show what DATABASE_URL we're using (hide password)
+if settings.database_url:
+    url_parts = settings.database_url.split("@")
+    if len(url_parts) > 1:
+        host_info = url_parts[-1]
+        scheme = settings.database_url.split("://")[0]
+        print(f"[DATABASE] URL scheme: {scheme}")
+        print(f"[DATABASE] URL host: {host_info}")
+    else:
+        print(f"[DATABASE] URL appears to be default/local")
+else:
+    print("[DATABASE] WARNING: database_url is empty!")
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +36,14 @@ class Base(DeclarativeBase):
 _engine: Optional[AsyncEngine] = None
 _async_session_maker: Optional[async_sessionmaker[AsyncSession]] = None
 
+print("[DATABASE] Module loaded, engine not yet created (lazy)")
+
 
 def get_engine() -> AsyncEngine:
     """Get or create the async engine (lazy initialization)."""
     global _engine
     if _engine is None:
+        print("[DATABASE] Creating async engine...")
         _engine = create_async_engine(
             settings.database_url,
             echo=settings.database_echo,
@@ -36,6 +53,7 @@ def get_engine() -> AsyncEngine:
             pool_timeout=30,
             pool_recycle=1800,
         )
+        print("[DATABASE] Engine created (connection not yet tested)")
     return _engine
 
 
@@ -63,7 +81,7 @@ async def get_db() -> AsyncSession:
             await session.close()
 
 
-async def wait_for_db(max_retries: int = 5, initial_delay: float = 1.0) -> bool:
+async def wait_for_db(max_retries: int = 5, initial_delay: float = 2.0) -> bool:
     """Wait for database to be available with exponential backoff.
     
     Args:
@@ -73,17 +91,22 @@ async def wait_for_db(max_retries: int = 5, initial_delay: float = 1.0) -> bool:
     Returns:
         True if connection successful, False otherwise
     """
+    print(f"[DATABASE] wait_for_db called, max_retries={max_retries}")
     engine = get_engine()
     delay = initial_delay
     
     for attempt in range(1, max_retries + 1):
         try:
+            print(f"[DATABASE] Connection attempt {attempt}/{max_retries}...")
             async with engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
+                print(f"[DATABASE] Connection SUCCESS on attempt {attempt}")
                 logger.info(f"Database connection successful on attempt {attempt}")
                 return True
         except Exception as e:
+            print(f"[DATABASE] Connection FAILED on attempt {attempt}: {type(e).__name__}: {e}")
             if attempt < max_retries:
+                print(f"[DATABASE] Waiting {delay:.1f}s before retry...")
                 logger.warning(
                     f"Database connection attempt {attempt}/{max_retries} failed: {e}. "
                     f"Retrying in {delay:.1f}s..."
@@ -91,6 +114,7 @@ async def wait_for_db(max_retries: int = 5, initial_delay: float = 1.0) -> bool:
                 await asyncio.sleep(delay)
                 delay *= 2  # Exponential backoff
             else:
+                print(f"[DATABASE] All {max_retries} attempts FAILED")
                 logger.error(f"Database connection failed after {max_retries} attempts: {e}")
                 return False
     
@@ -99,15 +123,19 @@ async def wait_for_db(max_retries: int = 5, initial_delay: float = 1.0) -> bool:
 
 async def init_db():
     """Initialize database connection and tables."""
+    print("[DATABASE] init_db() called")
     # Wait for database to be available
     if not await wait_for_db():
+        print("[DATABASE] CRITICAL: Could not connect to database!")
         raise RuntimeError("Could not connect to database after multiple retries")
     
     # Create tables if they don't exist
+    print("[DATABASE] Creating tables...")
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
+    print("[DATABASE] Database initialized successfully!")
     logger.info("Database initialized successfully")
 
 
@@ -118,6 +146,8 @@ async def close_db():
         await _engine.dispose()
         _engine = None
         _async_session_maker = None
+        print("[DATABASE] Connections closed")
         logger.info("Database connections closed")
+
 
 
