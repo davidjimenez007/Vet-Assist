@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 
 print("=" * 50)
-print("VETASSIST STARTING - Deploy version 2026-02-03 v3")
+print("VETASSIST STARTING - Deploy version 2026-02-03 v4")
 print("=" * 50)
 
 from contextlib import asynccontextmanager

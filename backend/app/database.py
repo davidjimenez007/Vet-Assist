@@ -39,13 +39,34 @@ _async_session_maker: Optional[async_sessionmaker[AsyncSession]] = None
 print("[DATABASE] Module loaded, engine not yet created (lazy)")
 
 
+def _get_database_url() -> str:
+    """
+    Sanitize database URL for SQLAlchemy asyncpg compatibility.
+    Railway provides postgres:// but asyncpg requires postgresql+asyncpg://
+    """
+    url = settings.database_url
+
+    # Handle Railway's postgres:// format
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        print(f"[DATABASE] Converted postgres:// to postgresql+asyncpg://")
+    elif url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        print(f"[DATABASE] Converted postgresql:// to postgresql+asyncpg://")
+    else:
+        print(f"[DATABASE] URL scheme is already correct")
+
+    return url
+
+
 def get_engine() -> AsyncEngine:
     """Get or create the async engine (lazy initialization)."""
     global _engine
     if _engine is None:
         print("[DATABASE] Creating async engine...")
+        database_url = _get_database_url()
         _engine = create_async_engine(
-            settings.database_url,
+            database_url,
             echo=settings.database_echo,
             pool_pre_ping=True,
             pool_size=5,
