@@ -1,7 +1,7 @@
 """FastAPI application entry point."""
 
 print("=" * 50)
-print("VETASSIST STARTING - Deploy version 2026-02-03 v4")
+print("VETASSIST STARTING - Deploy version 2026-02-03 v5")
 print("=" * 50)
 
 from contextlib import asynccontextmanager
@@ -65,11 +65,41 @@ print("[STARTUP] FastAPI app configured, ready to start!")
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with database status."""
+    from datetime import datetime
+    from sqlalchemy import text
+
+    db_status = "unknown"
+    db_error = None
+
+    try:
+        from app.database import get_engine
+        engine = get_engine()
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        db_status = "disconnected"
+        db_error = str(e)
+
+    # Get DB URL info (hide password)
+    db_host = "unknown"
+    if settings.database_url:
+        parts = settings.database_url.split("@")
+        if len(parts) > 1:
+            db_host = parts[-1].split("/")[0]
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_status == "connected" else "degraded",
         "version": settings.app_version,
+        "deploy_version": "2026-02-03 v5",
         "environment": settings.environment,
+        "database": {
+            "status": db_status,
+            "host": db_host,
+            "error": db_error,
+        },
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 
